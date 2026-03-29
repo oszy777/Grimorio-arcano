@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Grimório de Habilidades</title>
+<script src="gerador128k.js"></script>
+
+<style>
+body {
+    margin: 0;
+    font-family: "Segoe UI", sans-serif;
+    background: radial-gradient(circle at center, #1a1a22, #0a0a0f);
+    color: #eee;
+    display: flex;
+}
+
+#sidebar {
+    width: 320px;
+    height: 100vh;
+    overflow-y: auto;
+    background: linear-gradient(#14141a, #0c0c10);
+    padding: 15px;
+}
+
+#main {
+    flex: 1;
+    padding: 30px;
+}
+
+.skill {
+    padding: 10px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    background: #1f1f2a;
+    cursor: pointer;
+    transition: 0.2s;
+    font-size: 13px;
+}
+
+.skill:hover {
+    transform: scale(1.02);
+    background: #2a2a3a;
+}
+
+.D { border-left: 4px solid #777; }
+.C { border-left: 4px solid #4caf50; }
+.B { border-left: 4px solid #2196f3; }
+.A { border-left: 4px solid #9c27b0; }
+.S { border-left: 4px solid #ff9800; }
+
+#tooltip {
+    position: fixed;
+    background: #111;
+    border: 1px solid #444;
+    padding: 10px;
+    border-radius: 8px;
+    pointer-events: none;
+    opacity: 0;
+    max-width: 260px;
+}
+
+button, select {
+    padding: 10px;
+    border-radius: 8px;
+    border: none;
+    margin-top: 10px;
+    background: #222;
+    color: #fff;
+    cursor: pointer;
+}
+
+button:hover { background: #444; }
+
+#resetBtn {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: #c62828;
+    color: white;
+}
+</style>
+</head>
+
+<body>
+
+<div id="sidebar">
+    <h3>📜 Grimório</h3>
+    <div id="list"></div>
+</div>
+
+<div id="main">
+    <h1>⚔️ Invocar Habilidade</h1>
+
+    <p>Pontos: <span id="points">50</span></p>
+
+    <button onclick="addPoint()">+1 ponto</button>
+
+    <br><br>
+
+    <select id="rank">
+        <option value="D">D</option>
+        <option value="C">C</option>
+        <option value="B">B</option>
+        <option value="A">A</option>
+        <option value="S">S</option>
+    </select>
+
+    <br>
+    <button onclick="generateSkill()">Gerar</button>
+</div>
+
+<button id="resetBtn">RESET</button>
+<div id="tooltip"></div>
+
+<script>
+// =========================
+// BASE
+// =========================
+const allSkills = generate128kSkills();
+
+// =========================
+// ELEMENTOS
+// =========================
+const tooltip = document.getElementById("tooltip");
+const list = document.getElementById("list");
+const pointsEl = document.getElementById("points");
+
+// =========================
+// STATE
+// =========================
+let state = JSON.parse(localStorage.getItem("skills")) || {
+    points: 50,
+    created: {},
+    names: {},
+    descriptions: {},
+    meta: {}
+};
+
+state.names ||= {};
+state.descriptions ||= {};
+state.meta ||= {};
+
+updatePoints();
+
+// =========================
+// HELPERS
+// =========================
+function pick(arr){
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+
+// =========================
+// NOMES
+// =========================
+const usedNames = new Set(Object.values(state.names));
+
+function compactName(skill){
+
+    const weak = ["Toque","Golpe","Pulso","Eco"];
+    const mid = ["Corte","Ruptura","Impacto","Surto"];
+    const strong = ["Explosão","Cataclisma","Aniquilação","Domínio"];
+    const types = ["Sombrio","Arcano","Divino","Elemental","Temporal"];
+
+    let pool =
+        skill.rank==="D"?weak:
+        skill.rank==="C"?[...weak,...mid]:
+        skill.rank==="B"?mid:
+        skill.rank==="A"?[...mid,...strong]:
+        strong;
+
+    let name;
+    do { name = `${pick(pool)} ${pick(types)}`; }
+    while (usedNames.has(name));
+
+    usedNames.add(name);
+    return name;
+}
+
+// =========================
+// DANO
+// =========================
+function generateDamage(rank){
+
+    const dice = {D:[4,6],C:[6,8],B:[8,10],A:[10,12],S:[12,20]};
+    const qty = {D:[1,2],C:[2,3],B:[3,4],A:[4,6],S:[6,10]};
+
+    let d = pick(dice[rank]);
+    let q = Math.floor(Math.random()*(qty[rank][1]-qty[rank][0]+1))+qty[rank][0];
+
+    return `${q}d${d}`;
+}
+
+// =========================
+// CATEGORIA
+// =========================
+function generateCategory(){
+    return pick(["projétil","área","aura","suporte","impacto"]);
+}
+
+// =========================
+// DESCRIÇÃO
+// =========================
+function generateDescription(skill){
+
+    let name = state.names[skill.id];
+    let meta = state.meta[skill.id];
+
+    const verbs = ["canaliza","invoca","projeta","libera","distorce"];
+    const tones = {
+        D:["simples","instável"],
+        C:["preciso","controlado"],
+        B:["intenso","violento"],
+        A:["devastador","massivo"],
+        S:["apocalíptico","absoluto"]
+    };
+
+    return `
+✨ ${name}
+
+🎲 Dano: ${meta.damage}
+⏱ Tempo: ${meta.action}
+🌍 Área: ${meta.area}
+🎯 Categoria: ${meta.category}
+
+📖 Efeito:
+${name} ${pick(verbs)} energia ${pick(tones[skill.rank])}, afetando seus inimigos.
+`;
+}
+
+// =========================
+// GERAR SKILL
+// =========================
+function generateSkill(){
+
+    let rank = document.getElementById("rank").value;
+
+    let available = allSkills.filter(s =>
+        s.rank === rank && !state.created[s.id]
+    );
+
+    if (!available.length){
+        alert("Sem habilidades!");
+        return;
+    }
+
+    let skill = pick(available);
+
+    if (state.points < skill.cost){
+        alert("Sem pontos!");
+        return;
+    }
+
+    state.points -= skill.cost;
+    state.created[skill.id] = true;
+
+    if (!state.names[skill.id])
+        state.names[skill.id] = compactName(skill);
+
+    if (!state.meta[skill.id]){
+        state.meta[skill.id] = {
+            damage: generateDamage(skill.rank),
+            area: pick(["alvo único","cone","linha","explosão"]),
+            action: pick(["padrão","bônus","reação","movimento"]),
+            category: generateCategory()
+        };
+    }
+
+    if (!state.descriptions[skill.id])
+        state.descriptions[skill.id] = generateDescription(skill);
+
+    addSkill(skill);
+
+    save();
+    updatePoints();
+}
+
+// =========================
+// LISTA
+// =========================
+function addSkill(skill){
+
+    let div = document.createElement("div");
+    div.className = "skill " + skill.rank;
+
+    let name = state.names[skill.id];
+    let meta = state.meta[skill.id];
+
+    div.innerText = `${name}, ${meta.damage}, ${meta.area}, ${meta.category}`;
+
+    div.onmousemove = e => {
+        tooltip.style.left = e.clientX + 10 + "px";
+        tooltip.style.top = e.clientY + 10 + "px";
+        tooltip.innerHTML = state.descriptions[skill.id].replace(/\n/g,"<br>");
+        tooltip.style.opacity = 1;
+    };
+
+    div.onmouseleave = () => tooltip.style.opacity = 0;
+
+    list.appendChild(div);
+}
+
+// =========================
+// +1 PONTO
+// =========================
+function addPoint(){
+    state.points++;
+    save();
+    updatePoints();
+}
+
+// =========================
+// RESET
+// =========================
+document.getElementById("resetBtn").onclick = () => {
+    if (!confirm("Resetar tudo?")) return;
+    localStorage.removeItem("skills");
+    location.reload();
+};
+
+// =========================
+// SAVE / UI
+// =========================
+function save(){
+    localStorage.setItem("skills", JSON.stringify(state));
+}
+
+function updatePoints(){
+    pointsEl.innerText = state.points;
+}
+
+// =========================
+// LOAD
+// =========================
+for (let id in state.created){
+    let skill = allSkills[id];
+    if (skill) addSkill(skill);
+}
+
+</script>
+
+</body>
+</html>
